@@ -5,6 +5,7 @@ if (typeof importScripts === "function") {
 const cookiesToZero = new Set(SHIELD_CONFIG.cookiesToZero);
 const cookiesToDelete = new Set(SHIELD_CONFIG.cookiesToDelete);
 const targetDomains = SHIELD_CONFIG.domains;
+const ttlSeconds = SHIELD_CONFIG.ttlSeconds;
 
 const recentlySetByUs = new Set();
 const SELF_WRITE_TTL_MS = 1500;
@@ -25,11 +26,7 @@ function urlForCookie(cookie) {
 }
 
 function isTargetDomain(cookieDomain) {
-  const host = cookieDomain.replace(/^\./, "").toLowerCase();
-  for (const d of targetDomains) {
-    if (host === d || host.endsWith("." + d)) return true;
-  }
-  return false;
+  return shieldRegisteredDomain(cookieDomain.replace(/^\./, "")) !== null;
 }
 
 function buildSetDetails(cookie, value, ttlSeconds) {
@@ -75,7 +72,7 @@ function buildRemoveDetails(cookie) {
 
 async function setCookieToZero(cookie) {
   markSelfWrite(eventKey(cookie, "set"));
-  const details = buildSetDetails(cookie, "0", 60 * 60 * 24 * 180);
+  const details = buildSetDetails(cookie, "0", ttlSeconds);
   try {
     const result = await chrome.cookies.set(details);
     if (!result) {
@@ -115,7 +112,8 @@ async function sweepAllDomains() {
     let cookies;
     try {
       cookies = await chrome.cookies.getAll({ domain, firstPartyDomain: null });
-    } catch (_) {
+    } catch (e) {
+      console.debug("[shield] getAll with firstPartyDomain:null unsupported for", domain, "— retrying without it");
       try {
         cookies = await chrome.cookies.getAll({ domain });
       } catch (e) {

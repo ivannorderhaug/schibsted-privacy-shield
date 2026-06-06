@@ -2,6 +2,8 @@
   const cfg = globalThis.SHIELD_CONFIG;
   if (!cfg) return;
 
+  const warn = (...args) => console.warn("[shield/cs]", ...args);
+
   const lsZero = new Set(cfg.localStorageToZero);
   const lsDelete = new Set(cfg.localStorageToDelete);
   const ssDelete = new Set(cfg.sessionStorageToDelete);
@@ -9,52 +11,88 @@
   const cDelete = new Set(cfg.cookiesToDelete);
 
   const host = (location.hostname || "").toLowerCase();
-  let regDomain = null;
-  for (const d of cfg.domains) {
-    if (host === d || host.endsWith("." + d)) {
-      regDomain = d;
-      break;
-    }
-  }
+  const regDomain = globalThis.shieldRegisteredDomain(host);
 
-  const TTL = 60 * 60 * 24 * 180;
-  const TTL_MS = TTL * 1000;
+  const ttlSeconds = cfg.ttlSeconds;
+  const ttlMs = ttlSeconds * 1000;
 
   function encodeTcfString() {
-    const nowDs = BigInt(Math.floor(Date.now() / 100));
+    const TCF_VERSION = 2;
+    const CMP_ID_SOURCEPOINT = 6;
+    const CMP_VERSION = 1;
+    const CONSENT_SCREEN = 1;
+    const CONSENT_LANGUAGE = "EN";
+    const VENDOR_LIST_VERSION = 159;
+    const TCF_POLICY_VERSION = 5;
+    const IS_SERVICE_SPECIFIC = 1;
+    const USE_NON_STANDARD_STACKS = 0;
+    const NO_SPECIAL_FEATURE_OPT_INS = 0;
+    const NO_PURPOSE_CONSENTS = 0;
+    const NO_PURPOSE_LEGITIMATE_INTERESTS = 0;
+    const PURPOSE_ONE_TREATMENT = 0;
+    const PUBLISHER_COUNTRY = "NO";
+    const NO_VENDORS = 0;
+    const BITFIELD_ENCODING = 0;
+    const NO_PUBLISHER_RESTRICTIONS = 0;
+
+    const FIELD_BITS = {
+      version: 6,
+      created: 36,
+      lastUpdated: 36,
+      cmpId: 12,
+      cmpVersion: 12,
+      consentScreen: 6,
+      vendorListVersion: 12,
+      tcfPolicyVersion: 6,
+      isServiceSpecific: 1,
+      useNonStandardStacks: 1,
+      specialFeatureOptIns: 12,
+      purposeConsents: 24,
+      purposeLegitimateInterests: 24,
+      purposeOneTreatment: 1,
+      maxVendorId: 16,
+      rangeEncodingFlag: 1,
+      numPublisherRestrictions: 12,
+    };
+
+    const createdDeciseconds = BigInt(Math.floor(Date.now() / 100));
     const bits = [];
-    function push(value, length) {
+    const pushBits = (value, length) => {
       const big = BigInt(value);
       for (let i = length - 1; i >= 0; i--) {
         bits.push(Number((big >> BigInt(i)) & 1n));
       }
-    }
-    function pushChar(c) {
-      push(c.charCodeAt(0) - 65, 6);
-    }
-    push(2, 6);
-    push(nowDs, 36);
-    push(nowDs, 36);
-    push(6, 12);
-    push(1, 12);
-    push(1, 6);
-    pushChar("E");
-    pushChar("N");
-    push(159, 12);
-    push(5, 6);
-    push(1, 1);
-    push(0, 1);
-    push(0, 12);
-    push(0, 24);
-    push(0, 24);
-    push(0, 1);
-    pushChar("N");
-    pushChar("O");
-    push(0, 16);
-    push(0, 1);
-    push(0, 16);
-    push(0, 1);
-    push(0, 12);
+    };
+    const pushSixBitChar = (char) => pushBits(char.charCodeAt(0) - 65, 6);
+    const pushString = (text) => {
+      for (const char of text) pushSixBitChar(char);
+    };
+
+    pushBits(TCF_VERSION, FIELD_BITS.version);
+    pushBits(createdDeciseconds, FIELD_BITS.created);
+    pushBits(createdDeciseconds, FIELD_BITS.lastUpdated);
+    pushBits(CMP_ID_SOURCEPOINT, FIELD_BITS.cmpId);
+    pushBits(CMP_VERSION, FIELD_BITS.cmpVersion);
+    pushBits(CONSENT_SCREEN, FIELD_BITS.consentScreen);
+    pushString(CONSENT_LANGUAGE);
+    pushBits(VENDOR_LIST_VERSION, FIELD_BITS.vendorListVersion);
+    pushBits(TCF_POLICY_VERSION, FIELD_BITS.tcfPolicyVersion);
+    pushBits(IS_SERVICE_SPECIFIC, FIELD_BITS.isServiceSpecific);
+    pushBits(USE_NON_STANDARD_STACKS, FIELD_BITS.useNonStandardStacks);
+    pushBits(NO_SPECIAL_FEATURE_OPT_INS, FIELD_BITS.specialFeatureOptIns);
+    pushBits(NO_PURPOSE_CONSENTS, FIELD_BITS.purposeConsents);
+    pushBits(NO_PURPOSE_LEGITIMATE_INTERESTS, FIELD_BITS.purposeLegitimateInterests);
+    pushBits(PURPOSE_ONE_TREATMENT, FIELD_BITS.purposeOneTreatment);
+    pushString(PUBLISHER_COUNTRY);
+
+    pushBits(NO_VENDORS, FIELD_BITS.maxVendorId);
+    pushBits(BITFIELD_ENCODING, FIELD_BITS.rangeEncodingFlag);
+
+    pushBits(NO_VENDORS, FIELD_BITS.maxVendorId);
+    pushBits(BITFIELD_ENCODING, FIELD_BITS.rangeEncodingFlag);
+
+    pushBits(NO_PUBLISHER_RESTRICTIONS, FIELD_BITS.numPublisherRestrictions);
+
     while (bits.length % 8) bits.push(0);
     const bytes = new Uint8Array(bits.length / 8);
     for (let i = 0; i < bytes.length; i++) {
@@ -68,7 +106,7 @@
   }
 
   function zeroCookieString(name) {
-    let s = `${name}=0; Path=/; Max-Age=${TTL}; SameSite=Lax`;
+    let s = `${name}=0; Path=/; Max-Age=${ttlSeconds}; SameSite=Lax`;
     if (regDomain) s += `; Domain=.${regDomain}`;
     return s;
   }
@@ -78,7 +116,9 @@
       const desc = Object.getOwnPropertyDescriptor(Document.prototype, "cookie");
       if (desc && desc.set) desc.set.call(document, value);
       else document.cookie = value;
-    } catch (_) {}
+    } catch (e) {
+      warn("cookie write failed:", value, "—", e?.message || e);
+    }
   }
 
   for (const name of cZero) rawSetCookie(zeroCookieString(name));
@@ -109,7 +149,9 @@
         const isOurReject =
           cs && cs.rejectedAny === true && cs.consentedAll === false;
         if (stillFresh && isOurReject) needsInject = false;
-      } catch (_) {}
+      } catch (e) {
+        warn("could not parse existing consent state for", userKey, "—", e?.message || e);
+      }
     }
     if (!needsInject) return false;
 
@@ -118,7 +160,7 @@
       "00000000-0000-4000-8000-000000000000";
     const fullUuid = `${uuid}_56`;
     const now = new Date();
-    const exp = new Date(now.getTime() + TTL_MS);
+    const exp = new Date(now.getTime() + ttlMs);
     const tcString = encodeTcfString();
 
     const userConsent = {
@@ -184,18 +226,20 @@
         "_sp_non_keyed_local_state",
         JSON.stringify(nonKeyed),
       );
-    } catch (_) {}
+    } catch (e) {
+      warn("could not write Sourcepoint consent state —", e?.message || e);
+    }
 
     rawSetCookie(
-      `consentUUID=${fullUuid}; Path=/; Max-Age=${TTL}; SameSite=Lax` +
+      `consentUUID=${fullUuid}; Path=/; Max-Age=${ttlSeconds}; SameSite=Lax` +
         (regDomain ? `; Domain=.${regDomain}` : ""),
     );
     rawSetCookie(
-      `consentDate=${now.toISOString()}; Path=/; Max-Age=${TTL}; SameSite=Lax` +
+      `consentDate=${now.toISOString()}; Path=/; Max-Age=${ttlSeconds}; SameSite=Lax` +
         (regDomain ? `; Domain=.${regDomain}` : ""),
     );
     rawSetCookie(
-      `_sp_su=false; Path=/; Max-Age=${TTL}; SameSite=Lax` +
+      `_sp_su=false; Path=/; Max-Age=${ttlSeconds}; SameSite=Lax` +
         (regDomain ? `; Domain=.${regDomain}` : ""),
     );
     return true;
@@ -225,7 +269,7 @@
     });
   }
 
-  function cleanup(store, zeroSet, deleteSet) {
+  function cleanup(store, storeName, zeroSet, deleteSet) {
     try {
       for (const k of zeroSet) {
         if (store.getItem(k) !== "0") store.setItem(k, "0");
@@ -233,11 +277,13 @@
       for (const k of deleteSet) {
         if (store.getItem(k) !== null) store.removeItem(k);
       }
-    } catch (_) {}
+    } catch (e) {
+      warn(storeName, "cleanup failed —", e?.message || e);
+    }
   }
 
-  cleanup(localStorage, lsZero, lsDelete);
-  cleanup(sessionStorage, new Set(), ssDelete);
+  cleanup(localStorage, "localStorage", lsZero, lsDelete);
+  cleanup(sessionStorage, "sessionStorage", new Set(), ssDelete);
 
   const origSetItem = Storage.prototype.setItem;
   Storage.prototype.setItem = function (key, value) {
@@ -261,5 +307,7 @@
 
   try {
     delete globalThis.SHIELD_CONFIG;
-  } catch (_) {}
+  } catch (e) {
+    warn("could not remove SHIELD_CONFIG from global scope —", e?.message || e);
+  }
 })();

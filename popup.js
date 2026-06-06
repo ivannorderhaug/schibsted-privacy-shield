@@ -6,27 +6,17 @@ function setStatus(text, cls) {
   statusEl.className = "status" + (cls ? " " + cls : "");
 }
 
-function findRegDomain(host) {
-  host = host.toLowerCase();
-  for (const d of SHIELD_CONFIG.domains) {
-    if (host === d || host.endsWith("." + d)) return d;
-  }
-  return null;
-}
-
 async function refresh(tab, regDomain) {
-  const cookieNames = new Set([
+  const cookieExactNames = [
     ...SHIELD_CONFIG.cookiesToZero,
     ...SHIELD_CONFIG.cookiesToDelete,
-    "consentUUID",
-    "consentDate",
-    "_sp_su",
-  ]);
+    ...SHIELD_CONFIG.consentStateCookies,
+  ];
+  const cookiePrefixes = SHIELD_CONFIG.cookiePrefixesToDelete;
 
   const cookies = await chrome.cookies.getAll({ domain: regDomain });
   for (const c of cookies) {
-    const isSp = c.name.startsWith("_sp_") || c.name.startsWith("euconsent");
-    if (!cookieNames.has(c.name) && !isSp) continue;
+    if (!shieldKeyMatches(c.name, cookieExactNames, cookiePrefixes)) continue;
     const details = {
       url: `https://${c.domain.replace(/^\./, "")}${c.path || "/"}`,
       name: c.name,
@@ -38,33 +28,40 @@ async function refresh(tab, regDomain) {
     if (c.partitionKey) details.partitionKey = c.partitionKey;
     try {
       await chrome.cookies.remove(details);
-    } catch (_) {}
+    } catch (e) {
+      console.warn("[shield] cookie remove failed for", c.name, "—", e?.message || e);
+    }
   }
+
+  const localStorageExactNames = [
+    ...SHIELD_CONFIG.localStorageToZero,
+    ...SHIELD_CONFIG.localStorageToDelete,
+    ...SHIELD_CONFIG.sessionStorageToDelete,
+  ];
 
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     world: "MAIN",
-    func: () => {
-      try {
-        for (const k of Object.keys(localStorage)) {
-          if (
-            k.startsWith("_sp_") ||
-            k.startsWith("CMP:") ||
-            k.startsWith("_pulse") ||
-            k === "abTestId" ||
-            k.startsWith("euconsent")
-          ) {
-            localStorage.removeItem(k);
+    args: [
+      localStorageExactNames,
+      SHIELD_CONFIG.localStoragePrefixesToDelete,
+      SHIELD_CONFIG.sessionStorageToDelete,
+      SHIELD_CONFIG.sessionStoragePrefixesToDelete,
+    ],
+    func: (lsExact, lsPrefixes, ssExact, ssPrefixes) => {
+      const matches = (name, exact, prefixes) =>
+        exact.indexOf(name) !== -1 || prefixes.some((p) => name.indexOf(p) === 0);
+      const clearStore = (store, label, exact, prefixes) => {
+        try {
+          for (const key of Object.keys(store)) {
+            if (matches(key, exact, prefixes)) store.removeItem(key);
           }
+        } catch (e) {
+          console.warn("[shield/cs]", label, "clear failed —", e?.message || e);
         }
-      } catch (_) {}
-      try {
-        for (const k of Object.keys(sessionStorage)) {
-          if (k === "abTestId" || k.startsWith("_pulse")) {
-            sessionStorage.removeItem(k);
-          }
-        }
-      } catch (_) {}
+      };
+      clearStore(localStorage, "localStorage", lsExact, lsPrefixes);
+      clearStore(sessionStorage, "sessionStorage", ssExact, ssPrefixes);
     },
   });
 
@@ -82,11 +79,12 @@ async function init() {
   let host;
   try {
     host = new URL(tab.url).hostname;
-  } catch (_) {
+  } catch (e) {
+    console.warn("[shield] could not parse tab URL —", e?.message || e);
     setStatus("Ikke en nettside", "inactive");
     return;
   }
-  const regDomain = findRegDomain(host);
+  const regDomain = shieldRegisteredDomain(host);
   if (!regDomain) {
     setStatus(`Ikke aktiv på ${host}`, "inactive");
     return;
