@@ -9,7 +9,7 @@
     }
   },
   "name": "Schibsted Personvernskjold",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Nøytraliserer Schibsteds sporings- og personaliseringssignaler. 100 % lokal, samler ingen data.",
   "minimum_chrome_version": "111",
   "permissions": ["cookies", "activeTab", "scripting"],
@@ -21,7 +21,8 @@
     "*://*.aftenbladet.no/*",
     "*://*.aftonbladet.se/*",
     "*://*.svd.se/*",
-    "*://*.godt.no/*"
+    "*://*.godt.no/*",
+    "*://*.minmote.no/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -37,7 +38,8 @@
         "*://*.aftenbladet.no/*",
         "*://*.aftonbladet.se/*",
         "*://*.svd.se/*",
-        "*://*.godt.no/*"
+        "*://*.godt.no/*",
+        "*://*.minmote.no/*"
       ],
       "js": ["config.js", "storage-shield.js"],
       "run_at": "document_start",

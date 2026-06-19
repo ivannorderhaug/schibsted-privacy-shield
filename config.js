@@ -13,6 +13,7 @@ const SHIELD_CONFIG = {
     "aftonbladet.se",
     "svd.se",
     "godt.no",
+    "minmote.no",
   ],
 
   cookiesToZero: [
@@ -74,6 +75,7 @@ const SHIELD_CONFIG = {
     "aftonbladet.se": 4595,
     "svd.se": 8888,
     "godt.no": 14053,
+    "minmote.no": 14054,
   },
 
   sourcepointTemplates: {
@@ -85,6 +87,7 @@ const SHIELD_CONFIG = {
     4595: { messageId: 1484555, v1Data: "1288229", v1P: "459", ssCookie: DEFAULT_SS_COOKIE },
     8888: { messageId: 1484558, v1Data: "1288235", v1P: "48", ssCookie: DEFAULT_SS_COOKIE },
     14053: { messageId: 1486134, v1Data: "1289987", v1P: "629", ssCookie: DEFAULT_SS_COOKIE },
+    14054: { messageId: 1489178, v1Data: "1293436", v1P: "820", ssCookie: DEFAULT_SS_COOKIE },
   },
 };
 
