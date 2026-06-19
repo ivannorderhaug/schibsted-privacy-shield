@@ -25,8 +25,8 @@
     "*://*.minmote.no/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "scripts": ["config.js", "background.js"]
+    "service_worker": "src/background.js",
+    "scripts": ["src/config.js", "src/background.js"]
   },
   "content_scripts": [
     {
@@ -41,19 +41,19 @@
         "*://*.godt.no/*",
         "*://*.minmote.no/*"
       ],
-      "js": ["config.js", "storage-shield.js"],
+      "js": ["src/config.js", "src/storage-shield.js"],
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": false
     }
   ],
   "icons": {
-    "16": "icon-16.png",
-    "48": "icon-48.png",
-    "128": "icon-128.png"
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup.html",
     "default_title": "Schibsted Personvernskjold"
   }
 }
